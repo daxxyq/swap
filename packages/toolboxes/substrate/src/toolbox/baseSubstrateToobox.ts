@@ -3,9 +3,8 @@ import type { SubmittableExtrinsic } from "@polkadot/api/types";
 import type { KeyringPair } from "@polkadot/keyring/types";
 import type { Callback, IKeyringPair, ISubmittableResult } from "@polkadot/types/types";
 import type { AssetValue } from "@swapkit/helpers";
-
-import { u8aToHex } from "@polkadot/util";
 import type { SubstrateNetwork } from "../types/network.ts";
+import type { SwapKitSubstrateSigner } from "../types/signer.ts";
 
 // TODO combine this type with the more general SK type
 type SubstrateTransferParams = {
@@ -28,6 +27,7 @@ const getBalance = async (api: ApiPromise, gasAsset: AssetValue, address: string
   const { SwapKitNumber } = await import("@swapkit/helpers");
   const data = (await api.query.system.account(address)) as any;
   if (!data?.data?.free || data?.data?.isEmpty) return [gasAsset.set(0)];
+
   return [
     gasAsset.set(
       SwapKitNumber.fromBigInt(BigInt(data.data.free.toString()), gasAsset.decimal).getValue(
@@ -52,11 +52,11 @@ const validateAddress = async (address: string, networkPrefix: number) => {
 const createTransfer = (
   api: ApiPromise,
   { recipient, amount }: { recipient: string; amount: number },
-): SubmittableExtrinsic<"promise"> => api.tx.balances.transferAllowDeath(recipient, amount);
+) => api.tx.balances.transferAllowDeath(recipient, amount);
 
 const transfer = async (
   api: ApiPromise,
-  signer: IKeyringPair,
+  signer: IKeyringPair | SwapKitSubstrateSigner,
   { recipient, assetValue, from }: SubstrateTransferParams,
 ) => {
   const transfer = await createTransfer(api, {
@@ -64,23 +64,28 @@ const transfer = async (
     amount: assetValue.getBaseValue("number"),
   });
 
-  return (
-    await transfer.signAndSend(signer, { nonce: await getNonce(api, from || signer.address) })
-  ).toString();
+  const isKeyringSigner = "sign" in signer;
+
+  const account = isKeyringSigner ? signer : signer.address;
+  const options = isKeyringSigner
+    ? { nonce: await getNonce(api, from || signer.address) }
+    : { signer };
+
+  const txHash = await transfer.signAndSend(account, options);
+  return txHash.toString();
 };
 
 const estimateGasFee = async (
   api: ApiPromise,
-  signer: IKeyringPair,
+  signer: IKeyringPair | SwapKitSubstrateSigner,
   gasAsset: AssetValue,
   { recipient, assetValue, from }: SubstrateTransferParams,
 ) => {
   const { SwapKitNumber } = await import("@swapkit/helpers");
   const transfer = createTransfer(api, { recipient, amount: assetValue.getBaseValue("number") });
 
-  const paymentInfo = await transfer.paymentInfo(from || signer.address, {
-    nonce: await getNonce(api, from || signer.address),
-  });
+  const nonce = await getNonce(api, from || signer.address);
+  const paymentInfo = await transfer.paymentInfo(from || signer.address, { nonce });
 
   return gasAsset.set(
     SwapKitNumber.fromBigInt(BigInt(paymentInfo.partialFee.toString()), gasAsset.decimal).getValue(
@@ -98,19 +103,28 @@ const broadcast = async (
   return hash.toString();
 };
 
-const sign = async (signer: IKeyringPair, tx: SubmittableExtrinsic<"promise">) => {
-  const signedTx = await tx.signAsync(signer);
-  return signedTx;
+const sign = async (
+  signer: IKeyringPair | SwapKitSubstrateSigner,
+  tx: SubmittableExtrinsic<"promise">,
+) => {
+  if ("sign" in signer) {
+    const signedTx = await tx.signAsync(signer);
+    return signedTx;
+  }
+  return tx.signAsync(signer.address, { signer });
 };
 
 const signAndBroadcast = (
-  signer: IKeyringPair,
+  signer: IKeyringPair | SwapKitSubstrateSigner,
   tx: SubmittableExtrinsic<"promise">,
   callback?: Callback<ISubmittableResult>,
 ) => {
-  if (callback) return tx.signAndSend(signer, callback);
-  const hash = tx.signAndSend(signer);
-  return hash.toString();
+  if ("sign" in signer) {
+    if (callback) return tx.signAndSend(signer, callback);
+    const hash = tx.signAndSend(signer);
+    return hash.toString();
+  }
+  return tx.signAndSend(signer.address, { signer }, callback);
 };
 
 async function decodeAddress(address: string, networkPrefix?: number) {
@@ -125,6 +139,7 @@ async function encodeAddress(
   encoding: "ss58" | "hex" = "ss58",
   networkPrefix?: number,
 ) {
+  const { u8aToHex } = await import("@polkadot/util");
   const { encodeAddress } = await import("@polkadot/util-crypto");
   if (encoding === "hex") {
     return u8aToHex(address);
@@ -141,7 +156,7 @@ export const BaseToolbox = async ({
   api: ApiPromise;
   network: SubstrateNetwork;
   gasAsset: AssetValue;
-  signer: IKeyringPair;
+  signer: IKeyringPair | SwapKitSubstrateSigner;
 }): Promise<{
   api: ApiPromise;
   network: SubstrateNetwork;
@@ -152,7 +167,7 @@ export const BaseToolbox = async ({
     networkPrefix?: number,
   ) => Promise<string>;
   createKeyring: (phrase: string) => Promise<KeyringPair>;
-  getAddress: (signer?: KeyringPair) => string;
+  getAddress: (signer?: KeyringPair | SwapKitSubstrateSigner) => string;
   createTransfer: ({
     recipient,
     assetValue,
@@ -179,7 +194,8 @@ export const BaseToolbox = async ({
   decodeAddress,
   encodeAddress,
   createKeyring: async (phrase: string) => createKeyring(phrase, network.prefix),
-  getAddress: (keyring: IKeyringPair = signer) => keyring.address,
+  getAddress: (signerWithAddress: IKeyringPair | SwapKitSubstrateSigner = signer) =>
+    signerWithAddress.address,
   createTransfer: ({ recipient, assetValue }: { recipient: string; assetValue: AssetValue }) =>
     createTransfer(api, { recipient, amount: assetValue.getBaseValue("number") }),
   getBalance: async (address: string) => getBalance(api, gasAsset, address),

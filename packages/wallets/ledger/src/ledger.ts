@@ -1,4 +1,4 @@
-import { setRequestClientConfig } from "@swapkit/helpers";
+import { AssetValue, setRequestClientConfig } from "@swapkit/helpers";
 import type { DepositParam, TransferParams } from "@swapkit/toolbox-cosmos";
 import type { UTXOBuildTxParams } from "@swapkit/toolbox-utxo";
 import type { ConnectWalletParams, DerivationPathArray } from "@swapkit/types";
@@ -13,6 +13,7 @@ import type { CosmosLedger } from "./clients/cosmos.ts";
 import type { DogecoinLedger } from "./clients/dogecoin.ts";
 import type { EthereumLedger } from "./clients/ethereum.ts";
 import type { LitecoinLedger } from "./clients/litecoin.ts";
+import type { PolkadotLedger } from "./clients/polkadot.ts";
 import type { THORChainLedger } from "./clients/thorchain/index.ts";
 import type { LEDGER_SUPPORTED_CHAINS } from "./helpers/index.ts";
 import { getLedgerAddress, getLedgerClient } from "./helpers/index.ts";
@@ -83,7 +84,8 @@ const getToolbox = async ({
     | EthereumLedger
     | LitecoinLedger
     | THORChainLedger
-    | CosmosLedger;
+    | CosmosLedger
+    | Awaited<ReturnType<typeof PolkadotLedger>>;
   derivationPath?: DerivationPathArray;
   stagenet?: boolean;
 }) => {
@@ -361,6 +363,34 @@ const getToolbox = async ({
       const deposit = (params: DepositParam) => thorchainTransfer(params);
 
       return { ...toolbox, deposit, transfer, signMessage };
+    }
+    case Chain.Polkadot: {
+      const { getToolboxByChain } = await import("@swapkit/toolbox-substrate");
+
+      const polkadotSigner = signer as Awaited<ReturnType<typeof PolkadotLedger>>;
+
+      const toolbox = await getToolboxByChain(chain, {
+        signer: polkadotSigner,
+      });
+
+      async function transfer({
+        from,
+        assetValue,
+        recipient,
+      }: { from: string; assetValue: AssetValue; recipient: string }) {
+        const transfer = await toolbox.createTransfer({ recipient, assetValue });
+
+        const human = transfer.toHuman();
+
+        const signature = await polkadotSigner.signRaw(transfer);
+
+        // @ts-expect-error
+        const txHash = await toolbox.broadcast(transfer.addSignature(signature));
+
+        return txHash;
+      }
+
+      return { ...toolbox };
     }
 
     default:
