@@ -1,5 +1,6 @@
-import type { Chain, ChainWallet, QuoteRouteV2, SwapParams } from "@swapkit/core";
+import type { Chain, ChainWallet, SwapParams } from "@swapkit/core";
 import { AssetValue, SwapKitError } from "@swapkit/helpers";
+import type { QuoteRouteV2 } from "@swapkit/types";
 
 export type ChainflipRoute = {
   sellAsset: string;

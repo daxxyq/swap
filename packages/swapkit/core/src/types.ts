@@ -28,6 +28,7 @@ import {
   type CosmosChain,
   type EVMChain,
   type FeeOption,
+  type QuoteRouteV2,
   type UTXOChain,
   type WalletOption,
 } from "@swapkit/types";
@@ -118,18 +119,10 @@ export type WalletMethods = {
   [Chain.THORChain]: ThorchainWallet | null;
 };
 
-export type QuoteRouteV2 = {
-  buyAsset: string;
-  sellAsset: string;
-  sellAmount: number;
-  destinationAddress: string;
-  sourceAddress: string;
-  providers: string[];
-};
-
-export type SwapWithRouteParams = {
+// TODO needs to be updated after TS api v1 sunset
+export type SwapWithRouteParams<T extends QuoteRoute | QuoteRouteV2> = {
   recipient: string;
-  route: QuoteRoute | QuoteRouteV2;
+  route: T;
   feeOptionKey?: FeeOption;
   quoteId?: string;
   streamSwap?: boolean;

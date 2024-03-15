@@ -102,7 +102,7 @@ export class SwapKitCore<T = ""> {
     route,
     feeOptionKey = FeeOption.Average,
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <explanation>
-  }: SwapWithRouteParams) => {
+  }: SwapWithRouteParams<QuoteRoute>) => {
     const {
       meta: { quoteMode },
       //   evmTransactionDetails: contractCallParams,

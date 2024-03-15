@@ -1,5 +1,5 @@
-import { AssetValue, SwapKitError } from "@swapkit/helpers";
-import { Chain } from "@swapkit/types";
+import { AssetValue, type QuoteRoute, SwapKitError } from "@swapkit/helpers";
+import { Chain, type QuoteRouteV2 } from "@swapkit/types";
 import {
   getExplorerAddressUrl as getAddressUrl,
   getExplorerTxUrl as getTxUrl,
@@ -17,26 +17,19 @@ export enum ApproveMode {
   CheckOnly = "checkOnly",
 }
 
-export type ApproveReturnType<T extends ApproveMode> = T extends "checkOnly"
-  ? Promise<boolean>
-  : Promise<string>;
+export type ApproveReturnType<T extends ApproveMode> = T extends "checkOnly" ? boolean : string;
 
 type SwapKitPlugins = {
-  [K in PluginName]?: ProviderMethods;
+  [K in PluginName]?: PluginMethods;
 };
 
-type GenericSwapParams = {
-  buyAsset: AssetValue;
-  sellAsset: AssetValue;
-  recipient: string;
-};
-
-export type SwapParams = (SwapWithRouteParams | GenericSwapParams) & {
-  provider?: {
-    name: PluginName;
-    config: Record<string, any>;
+export type SwapParams<T extends QuoteRoute | QuoteRouteV2 = QuoteRoute> =
+  SwapWithRouteParams<T> & {
+    provider?: {
+      name: PluginName;
+      config: Record<string, any>;
+    };
   };
-};
 
 export type SwapKitReturnType = SwapKitPlugins & {
   getAddress: (chain: Chain) => string;
@@ -61,15 +54,16 @@ export type SwapKitReturnType = SwapKitPlugins & {
 };
 
 export type Wallets = { [K in Chain]?: ChainWallet<K> };
-export type AvailableProviders<T> = T | { [K in PluginName]?: ProviderMethods };
-export type ProviderMethods = {
+export type availablePlugins<T> = T | { [K in PluginName]?: PluginMethods };
+export type PluginMethods = {
   swap: (swapParams: SwapParams) => Promise<string>;
+  getSpender?: (chain: Chain) => Promise<string>;
   [key: string]: any;
 };
 
 export type SwapKitPlugin = ({ wallets, stagenet }: { wallets: Wallets; stagenet?: boolean }) => {
   name: PluginName;
-  methods: ProviderMethods;
+  methods: PluginMethods;
 };
 
 export type SwapKitWallet = {
@@ -78,7 +72,7 @@ export type SwapKitWallet = {
 };
 
 export function SwapKit<
-  ExtendedProviders extends {},
+  ExtendedPlugins extends {},
   ConnectWalletMethods extends Record<string, ReturnType<SwapKitWallet["connect"]>>,
 >({
   stagenet,
@@ -94,9 +88,9 @@ export function SwapKit<
   config?: Record<string, any>;
   apis: Record<string, any>;
   rpcUrls: Record<string, any>;
-}): SwapKitReturnType & ConnectWalletMethods & AvailableProviders<ExtendedProviders> {
+}): SwapKitReturnType & ConnectWalletMethods & availablePlugins<ExtendedPlugins> {
   const connectedWallets: Wallets = {};
-  const availablePlugins: AvailableProviders<ExtendedProviders> = {};
+  const availablePlugins: availablePlugins<ExtendedPlugins> = {};
 
   for (const plugin of plugins) {
     const { name, methods } = plugin({ wallets: connectedWallets, stagenet });
@@ -139,21 +133,23 @@ export function SwapKit<
    * @Private
    * Wallet interaction helpers
    */
-  function approve<T extends ApproveMode>({
+  async function approve<T extends ApproveMode>({
     assetValue,
     type = "checkOnly" as T,
-    contractAddress,
+    contractAddressOrPlugin,
   }: {
     type: T;
     assetValue: AssetValue;
-    contractAddress: string;
-  }): ApproveReturnType<T> {
+    contractAddressOrPlugin: string;
+  }): Promise<ApproveReturnType<T>> {
     const { address, chain, isGasAsset, isSynthetic } = assetValue;
     const isEVMChain = [Chain.Ethereum, Chain.Avalanche, Chain.BinanceSmartChain].includes(chain);
     const isNativeEVM = isEVMChain && isGasAsset;
 
     if (isNativeEVM || !isEVMChain || isSynthetic) {
-      return Promise.resolve(type === "checkOnly" ? true : "approved") as ApproveReturnType<T>;
+      return Promise.resolve(type === "checkOnly" ? true : "approved") as Promise<
+        ApproveReturnType<T>
+      >;
     }
 
     const walletMethods =
@@ -167,14 +163,19 @@ export function SwapKit<
 
     if (!(address && from)) throw new SwapKitError("core_approve_asset_address_or_from_not_found");
 
-    const spenderAddress = contractAddress;
+    const spenderAddress =
+      contractAddressOrPlugin in availablePlugins &&
+      getSwapKitPlugin(contractAddressOrPlugin as PluginName).getSpender
+        ? // @ts-expect-error cant infer
+          await getSwapKitPlugin(contractAddressOrPlugin as PluginName).getSpender(assetValue.chain)
+        : contractAddressOrPlugin;
 
     return walletAction({
       amount: assetValue.getBaseValue("bigint"),
       assetAddress: address,
       from,
       spenderAddress,
-    }) as ApproveReturnType<T>;
+    }) as Promise<ApproveReturnType<T>>;
   }
 
   /**
@@ -219,19 +220,25 @@ export function SwapKit<
     }
   }
 
-  /**
-   * @Public
-   * Wallet interaction methods
-   */
-  function approveAssetValue(assetValue: AssetValue, contractAddress: string) {
-    return approve({ assetValue, contractAddress, type: ApproveMode.Approve });
+  function approveAssetValue(assetValue: AssetValue, contractAddressOrPlugin: string) {
+    return approve({
+      assetValue,
+      contractAddressOrPlugin,
+      type: ApproveMode.Approve,
+    });
   }
 
-  function isAssetValueApproved(assetValue: AssetValue, contractAddress: string) {
-    return approve({ assetValue, contractAddress, type: ApproveMode.CheckOnly });
+  function isAssetValueApproved(assetValue: AssetValue, contractAddressOrPlugin: string) {
+    return approve({
+      assetValue,
+      contractAddressOrPlugin,
+      type: ApproveMode.CheckOnly,
+    });
   }
 
   function swap({ provider, ...rest }: SwapParams) {
+    if (!("route" in rest)) throw new SwapKitError("core_swap_invalid_params");
+
     const plugin = getSwapKitPlugin(provider?.name);
 
     return plugin.swap({ provider, ...rest });

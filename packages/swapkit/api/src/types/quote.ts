@@ -158,7 +158,7 @@ export type QuoteRoute = {
   contractInfo: string;
   contractMethod?: string;
   estimatedTime: number;
-  evmTransactionDetails?: EVMTransactionDetails;
+  evmTransactionDetails?: EVMTransactionDetailsOld;
   expectedOutput: string;
   expectedOutputMaxSlippage: string;
   expectedOutputMaxSlippageUSD: string;
@@ -191,7 +191,7 @@ export type QuoteRoute = {
   };
 };
 
-export interface EVMTransactionDetails {
+export interface EVMTransactionDetailsOld {
   contractAddress: string;
   contractMethod: string;
   contractParams: string[];

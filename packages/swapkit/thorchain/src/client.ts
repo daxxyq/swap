@@ -1,13 +1,13 @@
-import {
+import type {
   ApproveMode,
-  type ApproveReturnType,
-  type ChainWallet,
-  type CoreTxParams,
-  type EVMWallet,
-  type QuoteRoute,
-  type SwapParams,
-  type SwapWithRouteParams,
-  type ThorchainWallet,
+  ApproveReturnType,
+  ChainWallet,
+  CoreTxParams,
+  EVMWallet,
+  QuoteRoute,
+  SwapParams,
+  SwapWithRouteParams,
+  ThorchainWallet,
 } from "@swapkit/core";
 import type { ErrorKeys, ThornameRegisterParam } from "@swapkit/helpers";
 import {
@@ -37,7 +37,7 @@ import {
   lowercasedContractAbiMapping,
 } from "./aggregator/contracts/index.ts";
 import { getSwapInParams } from "./aggregator/getSwapParams.ts";
-import { getInboundData, getMimirData } from "./thornode.ts";
+import { getInboundData, getMimirData } from "./node.ts";
 
 type Wallets = { [K in Chain]?: ChainWallet<K> };
 
@@ -71,7 +71,7 @@ const prepareTxParams = (
   assetValue,
 });
 
-export const ThorchainProvider = ({
+export const ThorchainPlugin = ({
   wallets,
   stagenet = false,
 }: {
@@ -85,7 +85,7 @@ export const ThorchainProvider = ({
     assetValue: AssetValue;
     memo: string;
   }) => {
-    const mimir = await getMimirData(stagenet);
+    const mimir = await getMimirData(Chain.THORChain, stagenet);
 
     // check if trading is halted or not
     if (mimir.HALTCHAINGLOBAL >= 1 || mimir.HALTTHORCHAIN >= 1) {
@@ -365,11 +365,12 @@ export const ThorchainProvider = ({
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <explanation>
   const swap = async (swapParams: SwapParams) => {
+    // TODO this should move to core
     if (!("route" in swapParams)) throw new SwapKitError("core_swap_invalid_params");
 
     const route = swapParams.route as QuoteRoute;
 
-    const { streamSwap, recipient, feeOptionKey } = swapParams as SwapWithRouteParams;
+    const { streamSwap, recipient, feeOptionKey } = swapParams as SwapWithRouteParams<QuoteRoute>;
     const {
       meta: { quoteMode },
       //   evmTransactionDetails: contractCallParams,
@@ -608,7 +609,7 @@ export const ThorchainProvider = ({
         return { gas_rate: "0", router: "", address: "", halted: false, chain };
 
       default: {
-        const inboundData = await getInboundData(stagenet);
+        const inboundData = await getInboundData(Chain.THORChain, stagenet);
         const chainAddressData = inboundData.find((item) => item.chain === chain);
 
         if (!chainAddressData) throw new SwapKitError("core_inbound_data_not_found");
@@ -662,16 +663,12 @@ export const ThorchainProvider = ({
     });
   }
 
-  /**
-   * @Public
-   * Wallet interaction methods
-   */
-  function approveAssetValue(assetValue: AssetValue, contractAddress?: string) {
-    return approve({ assetValue, contractAddress, type: ApproveMode.Approve });
-  }
-
-  function isAssetValueApproved(assetValue: AssetValue, contractAddress?: string) {
-    return approve({ assetValue, contractAddress, type: ApproveMode.CheckOnly });
+  async function getApprovalTarget({
+    assetValue,
+  }: {
+    assetValue: AssetValue;
+  }) {
+    return (await getInboundDataByChain(assetValue.chain)).router as string;
   }
 
   return {
@@ -688,8 +685,7 @@ export const ThorchainProvider = ({
       createLiquidity,
       addLiquidityPart,
       nodeAction,
-      approveAssetValue,
-      isAssetValueApproved,
+      getApprovalTarget,
     },
   };
 };
