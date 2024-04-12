@@ -187,6 +187,12 @@ export class AssetValue extends BigIntArithmetics {
                   identifier,
                   decimal: "decimals" in rest ? rest.decimals : BaseDecimal[chain as Chain],
                 });
+                if ("shortCode" in rest) {
+                  staticTokensMap.set(rest.shortCode as TokenNames, {
+                    identifier,
+                    decimal: "decimals" in rest ? rest.decimals : BaseDecimal[chain as Chain],
+                  });
+                }
               }
             }
 

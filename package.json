@@ -22,7 +22,9 @@
     "typescript": "5.4.4"
   },
   "lint-staged": {
-    "*": ["bun biome check --apply --no-errors-on-unmatched --files-ignore-unknown=true"]
+    "*": [
+      "bun biome check --apply --no-errors-on-unmatched --files-ignore-unknown=true"
+    ]
   },
   "name": "swapkit-monorepo",
   "packageManager": "^bun@1.1.1",

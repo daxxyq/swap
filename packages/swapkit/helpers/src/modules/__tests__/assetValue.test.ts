@@ -269,6 +269,19 @@ describe("AssetValue", () => {
           ticker: "USDC",
         }),
       );
+
+      const btcShort = AssetValue.fromStringSync("b");
+      expect(btcShort).toBeDefined();
+      expect(btcShort).toEqual(
+        expect.objectContaining({
+          chain: Chain.Bitcoin,
+          decimal: 8,
+          isGasAsset: true,
+          isSynthetic: false,
+          symbol: "BTC.BTC",
+          ticker: "BTC",
+        }),
+      );
     });
 
     test("returns safe decimals if string is not in `@swapkit/tokens` lists", async () => {

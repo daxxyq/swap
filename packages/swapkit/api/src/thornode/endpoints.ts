@@ -5,6 +5,7 @@ import type {
   MimirData,
   NodeItem,
   ThornodeEndpointParams,
+  ThornodePoolItem,
 } from "./types.ts";
 
 function baseUrl({ type = "thorchain", stagenet = false }: ThornodeEndpointParams = {}) {
@@ -38,4 +39,8 @@ export function getMimirInfo(params?: ThornodeEndpointParams) {
 
 export function getInboundAddresses(params?: ThornodeEndpointParams) {
   return RequestClient.get<InboundAddressesItem[]>(`${baseUrl(params)}/inbound_addresses`);
+}
+
+export function getThornodePools(params?: ThornodeEndpointParams) {
+  return RequestClient.get<ThornodePoolItem[]>(`${baseUrl(params)}/pools`);
 }
