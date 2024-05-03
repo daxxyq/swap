@@ -14,6 +14,7 @@ import {
   SwapKitError,
   SwapKitNumber,
   type SwapParams,
+  TCArbitrumDepositABI,
   TCAvalancheDepositABI,
   TCBscDepositABI,
   TCEthereumVaultAbi,
@@ -441,7 +442,8 @@ const plugin = ({ wallets, stagenet = false }: { wallets: Wallet; stagenet?: boo
 
         case Chain.Ethereum:
         case Chain.BinanceSmartChain:
-        case Chain.Avalanche: {
+        case Chain.Avalanche:
+        case Chain.Arbitrum: {
           const wallet = wallets[chain];
           const { getChecksumAddressFromAsset } = await import("@swapkit/toolbox-evm");
 
@@ -450,7 +452,9 @@ const plugin = ({ wallets, stagenet = false }: { wallets: Wallet; stagenet?: boo
               ? TCAvalancheDepositABI
               : chain === Chain.BinanceSmartChain
                 ? TCBscDepositABI
-                : TCEthereumVaultAbi;
+                : chain === Chain.Arbitrum
+                  ? TCArbitrumDepositABI
+                  : TCEthereumVaultAbi;
 
           const tx = await wallet.call({
             abi,
